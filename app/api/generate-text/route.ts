@@ -245,8 +245,11 @@ Join an exclusive circle. Experience true luxury.`,
 }
 
 export async function POST(request: NextRequest) {
+  let body: any = {}; // ✅ FIX: global scope
+
   try {
-    const body = await request.json();
+    body = await request.json(); // ✅ FIX
+
     const {
       product = "",
       audience = "",
@@ -270,7 +273,6 @@ export async function POST(request: NextRequest) {
     // Use Akool AI only - primary service
     if (akoolApiKey) {
       try {
-        // Akool AI text generation endpoint
         const variations = generationMode === "standard" ? 1 : generationMode === "multiple" ? 3 : 5;
         const response = await fetch("https://api.akool.com/v1/text/generate", {
           method: "POST",
@@ -298,11 +300,9 @@ export async function POST(request: NextRequest) {
             });
           }
         } else {
-          // Handle Akool AI specific errors
           const errorData = await response.json().catch(() => ({}));
           const errorMessage = errorData.message || errorData.error || `Akool AI API error: ${response.status}`;
           
-          // Check for authentication errors
           if (response.status === 401 || response.status === 403) {
             return NextResponse.json(
               {
@@ -322,7 +322,6 @@ export async function POST(request: NextRequest) {
       } catch (akoolError: any) {
         console.error("Akool AI error:", akoolError);
         
-        // If it's an API key error, return specific message
         if (akoolError.message?.includes("401") || akoolError.message?.includes("403") || akoolError.message?.includes("unauthorized")) {
           return NextResponse.json(
             {
@@ -336,16 +335,10 @@ export async function POST(request: NextRequest) {
           );
         }
         
-        // For other errors, still try fallback
         console.log("Akool AI failed, trying fallback...");
       }
     }
 
-    // Skip OpenAI fallback - Use Akool AI only
-    // If Akool AI is not configured, use template fallback
-    // Note: OpenAI fallback has been disabled to focus on Akool AI integration
-
-    // Template-based fallback when APIs are unavailable
     const fallbackContent = generateTemplateAdCopy({
       product,
       audience: audience || "General",
@@ -360,14 +353,14 @@ export async function POST(request: NextRequest) {
       metadata: {
         generatedAt: Date.now(),
         fallback: true,
-        message: "Akool AI API key not configured. Using template-based generation. Get your API key from https://akool.com and add AKOOL_API_KEY to .env.local for AI-powered ads.",
-        apiKeyHelp: "Visit https://akool.com → Sign up → Get API key → Add to .env.local as AKOOL_API_KEY=your_key",
+        message: "Akool AI API key not configured. Using template-based generation.",
       },
     });
+
   } catch (error: any) {
     console.error("Text generation error:", error);
-    
-    // If Akool AI failed and we have an error, use template fallback
+
+    // ✅ NOW body works here (FIXED)
     if (error.message && !error.message.includes("401") && !error.message.includes("403")) {
       const fallbackContent = generateTemplateAdCopy({
         product: body.product || "",
@@ -383,21 +376,13 @@ export async function POST(request: NextRequest) {
         metadata: {
           generatedAt: Date.now(),
           fallback: true,
-          message: "Akool AI is not configured or unavailable. Using template-based generation. Get your API key from https://akool.com and add AKOOL_API_KEY to .env.local for AI-powered ads.",
         },
       });
     }
 
-    // Return the error if it's an authentication issue (already handled above)
     return NextResponse.json(
-      { 
-        error: error.message || "Failed to generate ad copy",
-        details: error.details || {
-          message: "Please configure Akool AI API key. Get it from https://akool.com",
-          solution: "Add AKOOL_API_KEY=your_key_here to .env.local file"
-        }
-      },
-      { status: error.details ? 401 : 500 }
+      { error: error.message || "Failed to generate ad copy" },
+      { status: 500 }
     );
   }
 }
